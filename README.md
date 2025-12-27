@@ -28,7 +28,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv init && uv venv --python 3.12  # change version as needed
 uv pip install -e .
 ```
-We can initialize a basic example:
 
 ### Local Environments
 The default REPL environment runs on the host process through Python `exec` calls. It uses the same virtual environment as the host process (i.e. it will have access to the same dependencies), but with some limitations in its available global modules. As an example, we can call RLM completions using GPT-5-nano with the Portkey client:

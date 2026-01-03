@@ -47,6 +47,7 @@ from rlm import RLM
 rlm = RLM(
     backend="portkey",
     backend_kwargs={"model_name": "@openai/gpt-5-nano"},
+    verbose=True,  # For printing to console with rich, disabled by default.
 )
 
 print(rlm.completion("Print me the first 100 powers of two, each on a newline.").response)
@@ -65,7 +66,8 @@ rlm = RLM(
 ### Local Environments
 The default `local` environment `LocalREPL` runs in the same process as the RLM itself, with specified global and local namespaces for minimal security. Using this REPL is generally safe, but should not be used for production settings. It also shares the same virtual environment (e.g. Conda or uv) as the host process.
 
-**Docker** <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*). We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.
+#### Docker <img src="https://github.com/docker.png" alt="Docker" height="20" style="vertical-align: middle;"/> (*requires [Docker installed](https://docs.docker.com/desktop/setup/install/)*)
+We also support a Docker-based environment called `DockerREPL` that launches the REPL environment as a Docker image. By default, we use the `python:3.11-slim` image, but the user can specify custom images as well.
 
 ### Isolated Environments
 We support several different REPL environments that run on separate, cloud-based machines. Whenever a recursive sub-call is made in these instances, it is requested from the host process.
@@ -76,6 +78,10 @@ To use [Modal Sandboxes](https://modal.com/docs/guide/sandboxes) as the REPL env
 uv add modal  # add modal library
 modal setup   # authenticate account
 ```
+
+#### Prime Intellect Sandboxes <img src="https://github.com/PrimeIntellect-ai.png" alt="Prime Intellect" height="20" style="vertical-align: middle;"/>
+> [!WARNING]
+> **Prime Intellect Sandboxes** are currently a beta feature. See the [documentation](https://docs.primeintellect.ai/sandboxes/overview) for more information.
 
 
 ### Model Providers

@@ -50,7 +50,8 @@ ACCESS EXAMPLES:
 # =============================================================================
 # Load Data
 # =============================================================================
-DATA_PATH = "/checkpoint/maui_sft/winnieyangwn/amaia_dumps/514/trajectories/514_metadata.jsonl"
+run_id = 513
+DATA_PATH = f"/checkpoint/maui_sft/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
 
 
 def load_rollout_data(path: str, max_rows: int | None = None) -> list[dict]:

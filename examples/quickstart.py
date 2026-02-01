@@ -9,13 +9,17 @@ load_dotenv()
 
 logger = RLMLogger(log_dir="./logs")
 
+# Create the RLM Instance
 rlm = RLM(
-    backend="openai",  # or "portkey", etc.
+    backend="azure_openai",
     backend_kwargs={
-        "model_name": "gpt-5-nano",
-        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model_name": "gpt-5",
+        "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+        "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+        "azure_deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+        "api_version": "2025-03-01-preview",
     },
-    environment="docker",
+    environment="local",  # Using local since Docker isn't available
     environment_kwargs={},
     max_depth=1,
     logger=logger,

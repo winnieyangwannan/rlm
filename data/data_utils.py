@@ -42,7 +42,7 @@ def flatten_dataframe(df_trj) -> pd.DataFrame:
     
     Returns:
         DataFrame with task_name, task_description, code, percentile, valid_submission,
-        eval_error_message, eval_duration, rollout_duration, and rollout columns.
+        eval_error_output, eval_duration, rollout_duration, and rollout columns.
     """
     rows = []
     
@@ -59,11 +59,13 @@ def flatten_dataframe(df_trj) -> pd.DataFrame:
             "code": info.get("pred_solution"),
             "percentile": last_outcomes.get("percentile"),
             "valid_submission": last_outcomes.get("valid_submission"),
-            "eval_error_message": last_outcomes.get("eval_error_message"),
+            "eval_error_output": last_outcomes.get("eval_error_output"),
             "eval_duration": last_outcomes.get("gpu_execution_duration"),
             "rollout_duration": rollout_data["metrics"].get("rollout/duration"),
             "rollout": build_rollout(df_trj, idx)
         })
     
     return pd.DataFrame(rows)
+
+
 

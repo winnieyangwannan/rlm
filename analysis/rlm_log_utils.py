@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,39 @@ def get_final_answer(iterations: list[dict]) -> str | None:
             return it["final_answer"]
     return None
 
+
+def get_total_runtime(entries: list[dict]) -> timedelta:
+    """
+    Calculate total runtime from log entries.
+    
+    Args:
+        entries: Full list of entries from load_rlm_log (metadata + iterations)
+        
+    Returns:
+        timedelta representing total runtime
+    """
+    if len(entries) < 2:
+        return timedelta(0)
+    
+    start_time = datetime.fromisoformat(entries[0]["timestamp"])
+    end_time = datetime.fromisoformat(entries[-1]["timestamp"])
+    return end_time - start_time
+
+
+# def get_total_iteration_time(iterations: list[dict]) -> float:
+#     """
+#     Sum of all iteration times (actual execution time, excludes setup overhead).
+    
+#     This is more accurate than timestamp-based runtime as it uses the
+#     internally tracked iteration_time from time.perf_counter().
+    
+#     Args:
+#         iterations: List of iteration dicts (entries[1:] from load_rlm_log)
+        
+#     Returns:
+#         Total iteration time in seconds
+#     """
+#     return sum(it.get("iteration_time", 0) for it in iterations)
 
 
 def get_all_code_with_results(iterations: list[dict]) -> list[dict[str, Any]]:

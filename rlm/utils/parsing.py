@@ -26,12 +26,40 @@ def find_code_blocks(text: str) -> list[str]:
     return results
 
 
+def _extract_balanced_parens(text: str, start_pos: int) -> str | None:
+    """
+    Extract content inside balanced parentheses starting at start_pos.
+    
+    Args:
+        text: The full text
+        start_pos: Position of the opening '('
+        
+    Returns:
+        The content inside the balanced parentheses, or None if unbalanced
+    """
+    if start_pos >= len(text) or text[start_pos] != "(":
+        return None
+    
+    depth = 0
+    for i in range(start_pos, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                # Found matching closing paren
+                return text[start_pos + 1 : i]
+    return None
+
+
 def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | None:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return the final answer string.
 
     If FINAL_VAR is found and an environment is provided, executes code to retrieve the variable value.
     Returns None if neither pattern is found.
+    
+    Handles nested parentheses correctly, e.g., FINAL(Among invalid (n=100), the top errors are...)
 
     Args:
         text: The response text to parse
@@ -41,23 +69,25 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         The final answer string, or None if no final answer pattern is found
     """
     # Check for FINAL_VAR pattern first - must be at start of line
-    final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
-    match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
-    if match:
-        variable_name = match.group(1).strip().strip('"').strip("'")
-        if environment is not None:
-            result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
-            final_answer = result.stdout.strip()
-            if final_answer == "":
-                final_answer = result.stderr.strip() or ""
-            return final_answer
-        return None
+    final_var_match = re.search(r"^\s*FINAL_VAR\(", text, re.MULTILINE)
+    if final_var_match:
+        content = _extract_balanced_parens(text, final_var_match.end() - 1)
+        if content is not None:
+            variable_name = content.strip().strip('"').strip("'")
+            if environment is not None:
+                result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
+                final_answer = result.stdout.strip()
+                if final_answer == "":
+                    final_answer = result.stderr.strip() or ""
+                return final_answer
+            return None
 
     # Check for FINAL pattern - must be at start of line
-    final_pattern = r"^\s*FINAL\((.*?)\)"
-    match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
-    if match:
-        return match.group(1).strip()
+    final_match = re.search(r"^\s*FINAL\(", text, re.MULTILINE)
+    if final_match:
+        content = _extract_balanced_parens(text, final_match.end() - 1)
+        if content is not None:
+            return content.strip()
 
     return None
 

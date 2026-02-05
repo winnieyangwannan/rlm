@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from collections import defaultdict
 from typing import Any
 
@@ -7,6 +9,10 @@ from dotenv import load_dotenv
 
 from rlm.clients.base_lm import BaseLM
 from rlm.core.types import ModelUsageSummary, UsageSummary
+
+# Retry configuration for rate limit errors
+MAX_RETRIES = 64
+RETRY_DELAY = 8.0  # seconds
 
 load_dotenv()
 
@@ -83,12 +89,22 @@ class AzureOpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for Azure OpenAI client.")
 
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-        )
-        self._track_cost(response, model)
-        return response.choices[0].message.content
+        # Retry with exponential backoff for rate limit errors
+        last_exception = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+                self._track_cost(response, model)
+                return response.choices[0].message.content
+            except openai.RateLimitError as e:
+                last_exception = e
+                if attempt < MAX_RETRIES - 1:
+                    print(f"Rate limit hit, retrying in {RETRY_DELAY:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})...")
+                    time.sleep(RETRY_DELAY)
+        raise last_exception
 
     async def acompletion(
         self, prompt: str | list[dict[str, Any]], model: str | None = None
@@ -104,12 +120,22 @@ class AzureOpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for Azure OpenAI client.")
 
-        response = await self.async_client.chat.completions.create(
-            model=model,
-            messages=messages,
-        )
-        self._track_cost(response, model)
-        return response.choices[0].message.content
+        # Retry with exponential backoff for rate limit errors
+        last_exception = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await self.async_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+                self._track_cost(response, model)
+                return response.choices[0].message.content
+            except openai.RateLimitError as e:
+                last_exception = e
+                if attempt < MAX_RETRIES - 1:
+                    print(f"Rate limit hit, retrying in {RETRY_DELAY:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})...")
+                    await asyncio.sleep(RETRY_DELAY)
+        raise last_exception
 
     def _track_cost(self, response: openai.ChatCompletion, model: str):
         self.model_call_counts[model] += 1

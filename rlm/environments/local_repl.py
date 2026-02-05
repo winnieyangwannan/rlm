@@ -339,10 +339,25 @@ class LocalREPL(NonIsolatedEnv):
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
 
+        # Track execution count for debugging
+        if not hasattr(self, "_exec_count"):
+            self._exec_count = 0
+        self._exec_count += 1
+
+        # Snapshot locals BEFORE execution (for debugging)
+        locals_before = set(self.locals.keys())
+
         with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
             try:
                 combined = {**self.globals, **self.locals}
+                # Snapshot combined keys before exec
+                combined_before = set(combined.keys())
+                
                 exec(code, combined, combined)
+
+                # Snapshot what's in combined AFTER exec (before filtering)
+                combined_after = set(combined.keys())
+                new_vars_in_combined = combined_after - combined_before
 
                 # Update locals with new variables
                 for key, value in combined.items():
@@ -354,6 +369,52 @@ class LocalREPL(NonIsolatedEnv):
             except Exception as e:
                 stdout = stdout_buf.getvalue()
                 stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+                # Debug logging for NameError
+                if isinstance(e, NameError):
+                    import re
+                    # Extract the undefined variable name from the error message
+                    match = re.search(r"name '(\w+)' is not defined", str(e))
+                    undefined_var = match.group(1) if match else "unknown"
+                    
+                    # Check the three scenarios
+                    print(f"\n{'='*60}")
+                    print(f"[DEBUG NameError] Execution #{self._exec_count}")
+                    print(f"[DEBUG NameError] Undefined variable: '{undefined_var}'")
+                    print(f"{'='*60}")
+                    
+                    # Scenario 1: Check if var is in globals (namespace collision)
+                    in_globals = undefined_var in self.globals
+                    print(f"\n[SCENARIO 1 - Namespace collision]")
+                    print(f"  Variable '{undefined_var}' in self.globals: {in_globals}")
+                    if in_globals:
+                        print(f"  Value in globals: {type(self.globals.get(undefined_var))}")
+                    
+                    # Scenario 2: Check if var was ever in locals (wasn't persisted)
+                    in_locals = undefined_var in self.locals
+                    print(f"\n[SCENARIO 2 - Variable not persisted]")
+                    print(f"  Variable '{undefined_var}' in self.locals: {in_locals}")
+                    print(f"  Locals before this exec ({len(locals_before)}): {sorted(locals_before)[:30]}")
+                    if len(locals_before) > 30:
+                        print(f"    ... and {len(locals_before) - 30} more")
+                    
+                    # Scenario 3: Multi-cell dependency - var never defined
+                    print(f"\n[SCENARIO 3 - Multi-cell dependency]")
+                    print(f"  Total executions so far: {self._exec_count}")
+                    print(f"  Variable '{undefined_var}' was never in namespace")
+                    
+                    # Show what IS available
+                    available_in_combined = sorted([k for k in combined.keys() if not k.startswith("_")])
+                    print(f"\n[AVAILABLE VARIABLES]")
+                    print(f"  In combined namespace ({len(available_in_combined)}): {available_in_combined[:40]}")
+                    if len(available_in_combined) > 40:
+                        print(f"    ... and {len(available_in_combined) - 40} more")
+                    
+                    # Show the code that failed
+                    print(f"\n[FAILED CODE] (first 800 chars):")
+                    print(f"{code[:800]}")
+                    if len(code) > 800:
+                        print(f"... ({len(code) - 800} more chars)")
+                    print(f"{'='*60}\n")
 
         return REPLResult(
             stdout=stdout,

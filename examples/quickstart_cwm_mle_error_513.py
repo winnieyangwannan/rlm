@@ -60,10 +60,7 @@ log_dir  = "/checkpoint/maui_sft/winnieyangwn/rlm_dumps"
 # vLLM will auto-download from Hugging Face if not cached http://h200-137-242-013:44379
 model_path = "facebook/cwm-sft" 
 model_name = "cwm" # Hugging Face model ID
-# VLLM_HOST = os.getenv("VLLM_HOST", "localhost")  # Set via env var or default
-VLLM_HOST = "h200-137-242-013"
-VLLM_PORT = "44379"
-VLLM_BASE_URL = f"http://{VLLM_HOST}:{VLLM_PORT}/v1"
+VLLM_BASE_URL = "http://h200-061-030:9255/v1"
 
 
 def load_rollout_data(path: str, max_rows: int | None = None) -> list[dict]:
@@ -105,6 +102,13 @@ def main():
             "model_name": model_path,
             "base_url": VLLM_BASE_URL,
             "api_key": "not-needed",  # vLLM doesn't require an API key
+            # Enable thinking for CWM model via vLLM chat_template_kwargs
+            "extra_body": {
+                "chat_template_kwargs": {
+                    "enable_thinking": True,
+                    "preserve_previous_think": True,
+                }
+            },
         },
         environment="local",
         environment_kwargs={},

@@ -27,9 +27,12 @@ class OpenAIClient(BaseLM):
         api_key: str | None = None,
         model_name: str | None = None,
         base_url: str | None = None,
+        extra_body: dict[str, Any] | None = None,
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
+        # Store custom extra_body params (e.g., for vLLM chat_template_kwargs)
+        self._extra_body = extra_body or {}
 
         if api_key is None:
             if base_url == "https://api.openai.com/v1" or base_url is None:
@@ -62,12 +65,12 @@ class OpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
 
-        extra_body = {}
+        extra_body = {**self._extra_body}
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
             extra_body["usage"] = {"include": True}
 
         response = self.client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
+            model=model, messages=messages, extra_body=extra_body if extra_body else None
         )
         self._track_cost(response, model)
         return response.choices[0].message.content
@@ -86,12 +89,12 @@ class OpenAIClient(BaseLM):
         if not model:
             raise ValueError("Model name is required for OpenAI client.")
 
-        extra_body = {}
+        extra_body = {**self._extra_body}
         if self.client.base_url == DEFAULT_PRIME_INTELLECT_BASE_URL:
             extra_body["usage"] = {"include": True}
 
         response = await self.async_client.chat.completions.create(
-            model=model, messages=messages, extra_body=extra_body
+            model=model, messages=messages, extra_body=extra_body if extra_body else None
         )
         self._track_cost(response, model)
         return response.choices[0].message.content

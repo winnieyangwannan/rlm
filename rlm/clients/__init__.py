@@ -21,18 +21,12 @@ def get_client(
 
         return OpenAIClient(**backend_kwargs)
     elif backend == "vllm":
-        from rlm.clients.litellm import LiteLLMClient
+        from rlm.clients.openai import OpenAIClient
 
         assert "base_url" in backend_kwargs, (
             "base_url is required to be set to local vLLM server address for vLLM"
         )
-        # LiteLLM uses api_base instead of base_url
-        if "base_url" in backend_kwargs and "api_base" not in backend_kwargs:
-            backend_kwargs["api_base"] = backend_kwargs.pop("base_url")
-        # LiteLLM requires hosted_vllm/ prefix for vLLM models
-        if "model_name" in backend_kwargs and not backend_kwargs["model_name"].startswith("hosted_vllm/"):
-            backend_kwargs["model_name"] = f"hosted_vllm/{backend_kwargs['model_name']}"
-        return LiteLLMClient(**backend_kwargs)
+        return OpenAIClient(**backend_kwargs)
     elif backend == "portkey":
         from rlm.clients.portkey import PortkeyClient
 

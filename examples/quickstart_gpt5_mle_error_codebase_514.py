@@ -21,57 +21,14 @@ from rlm.logger import RLMLogger
 load_dotenv()
 
 # =============================================================================
-# CWM-Specific System Prompt
-# =============================================================================
-# CWM tends to output multiple code blocks at once. This prompt enforces
-# a strict one-block-per-iteration pattern for proper REPL interaction.
-CWM_SYSTEM_PROMPT = """You are tasked with answering a query with associated context. You can access, transform, and analyze this context interactively in a REPL environment.
-
-The REPL environment is initialized with:
-1. A `context` variable that contains important information about your query.
-2. A `llm_query` function that allows you to query an LLM inside your REPL environment.
-3. A `llm_query_batched` function for concurrent queries: `llm_query_batched(prompts: List[str]) -> List[str]`.
-4. The ability to use `print()` statements to view output.
-
-CRITICAL RULES:
-1. **ONE CODE BLOCK PER RESPONSE**: Output ONLY ONE ```repl block per response. Never output multiple code blocks.
-2. **WAIT FOR OUTPUT**: After each code block, STOP and wait to see the execution output before continuing.
-3. **CHECK VARIABLES EXIST**: Before using a variable, verify it exists and has the expected value.
-4. **HANDLE ERRORS**: If your code produces an error, analyze it and fix it in the next iteration.
-
-When you want to execute Python code, wrap it in triple backticks with 'repl' language identifier:
-```repl
-# Your code here - ONLY ONE BLOCK!
-result = some_computation()
-print(result)
-```
-
-Then STOP and wait for the output. Do not write more code until you see the result.
-
-When you are done, provide a final answer using:
-1. FINAL(your final answer here) - for direct text answers
-2. FINAL_VAR(variable_name) - to return a variable from the REPL
-"""
-
-# =============================================================================
 # Configuration
 # =============================================================================
-run_id = 513
+run_id = 514
 DATA_PATH = f"/checkpoint/maui_sft/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
-CODEBASE_PATH = "/checkpoint/agentic-models/winnieyangwn/amaia_dumps/503/code/2026_02_02_00_55_44"  # Path to codebase directory
+CODEBASE_PATH = "/checkpoint/maui_sft/winnieyangwn/amaia_dumps/514/code/2026_01_23_09_50_18"  # Path to codebase directory
 CODEBASE_EXTENSIONS = [".py", ".md", ".yaml"]  # File extensions to include (e.g., [".py", ".ts", ".js"])
-CONFIG_YAML_PATH = "/home/winnieyangwn/amaia-collab/apps/sea/configs/winnieyang/eval/baseline/gpt5/513.yaml"  # Path to the YAML config file used to run the evaluation
-
-# CWM model served via vLLM
-# Start vLLM server first with the Hugging Face model:
-#   vllm serve facebook/cwm-sft \
-#       --host 0.0.0.0 --port 8000 --tensor-parallel-size 8
-# vLLM will auto-download from Hugging Face if not cached
-model_path = "facebook/cwm-sft"  # Hugging Face model ID
-model_name = "cwm"
-VLLM_BASE_URL = "http://h200-061-030:9255/v1"
-
-
+CONFIG_YAML_PATH = "/home/winnieyangwn/amaia-collab/apps/sea/configs/winnieyang/eval/gpt5/514.yaml"  # Path to the YAML config file used to run the evaluation
+model_name = "gpt-5"  # Example model name
 job_name = "common_invalid_errors_codebase"
 log_dir = "/checkpoint/maui_sft/winnieyangwn/rlm_dumps"
 
@@ -236,28 +193,21 @@ print(f"Loaded {{len(rollout_df)}} rollouts, {{len(codebase)}} codebase files, a
 """
 
     # Create the RLM Instance
-    # NOTE: CWM requires a custom system prompt to enforce single code block per iteration
     rlm = RLM(
-        backend="vllm",
+        backend="azure_openai",
         backend_kwargs={
-            "model_name": model_path,
-            "base_url": VLLM_BASE_URL,
-            "api_key": "not-needed",  # vLLM doesn't require an API key
-            # Enable thinking for CWM model via vLLM chat_template_kwargs
-            "extra_body": {
-                "chat_template_kwargs": {
-                    "enable_thinking": True,
-                    "preserve_previous_think": True,
-                }
-            },
+            "model_name": model_name,
+            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+            "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+            "azure_deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+            "api_version": "2025-03-01-preview",
         },
         environment="local",
         environment_kwargs={
             "setup_code": setup_code,  # Load data directly in REPL
         },
         max_depth=2,
-        max_iterations=100,  # CWM may need more iterations due to one-block-at-a-time
-        custom_system_prompt=CWM_SYSTEM_PROMPT,  # Use CWM-specific prompt
+        max_iterations=100,  # Reduced from 30 - simple analytical task
         logger=logger,
         verbose=True,
     )
@@ -265,23 +215,7 @@ print(f"Loaded {{len(rollout_df)}} rollouts, {{len(codebase)}} codebase files, a
     # Define your question
     # question = "What percentage of rollouts produced a valid submission?"
     # question = "Among all invalid submissions, what are the top 5 most common evaluation error messages?"
-    question = """Analyze the ROLLOUT DATA and CODEBASE to diagnose the most common evaluation errors:
-
-1. IDENTIFY ERRORS: From `rollout_df` where `valid_submission == False`, extract and count the top 5 most common `eval_error_output` messages.
-
-2. DEEP DIVE: For the #1 most frequent error:
-   a) Show 2-3 example code solutions with this error.  What patterns do you see?
-   b) What are the common reasons for this type of error?
-
-3. ROOT CAUSE ANALYSIS: Search the CODEBASE for code that could cause or relate to this error:
-   a) Identify the relevant source files
-   b) Explain the likely root cause with specific code references
-
-4. RECOMMENDATIONS: Propose 2-3 specific, actionable fixes:
-   - What code changes in the CODEBASE would prevent this error?
-   - What prompt/instruction changes could help the agent avoid this failure mode?
-
-Show your evidence (code snippets, error examples) for each conclusion."""
+    question = "Examine the ROLLOUT DATA, Among all invalid submissions, what are the top 5 most common evaluation error messages? Then focusing on the top most frequent error. What is the likely cause to this error? Analyzing the CODEBASE, try to identify the root cause of the error. Suggest specific improvements to fix this error in future rollouts."
 
     # Build the root_prompt with data schema + question
     root_prompt = f"{data_schema}\nQUESTION: {question}"

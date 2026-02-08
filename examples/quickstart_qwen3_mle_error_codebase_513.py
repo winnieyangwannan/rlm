@@ -79,9 +79,7 @@ CONFIG_YAML_PATH = "/home/winnieyangwn/amaia-collab/apps/sea/configs/winnieyang/
 # vLLM will auto-download from Hugging Face if not cached
 model_path = "Qwen/Qwen3-Coder-480B-A35B-Instruct"  # Hugging Face model ID
 model_name = "qwen3"
-VLLM_HOST = "h200-137-107-074"
-VLLM_PORT = "32868"
-VLLM_BASE_URL = f"http://{VLLM_HOST}:{VLLM_PORT}/v1"
+VLLM_BASE_URL = f"http://h200-154-066:40329/v1"
 
 job_name = "common_invalid_errors_codebase"
 log_dir = "/checkpoint/maui_sft/winnieyangwn/rlm_dumps"

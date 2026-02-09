@@ -271,31 +271,44 @@ Then in your next response, use: FINAL_VAR(final_answer)"""
 
 def build_round2_question() -> str:
     """Build the Round 2 comparison question."""
-    return """## Task
+    return """## Goal
+Analyze previous solutions and analysis to identify:
+1. **Patterns that distinguish high vs low performance** (optimization)
+2. **Critical failures that cause catastrophic results** (failure prevention)
+3. **Unique high-performing approaches** (diversity preservation)
 
-You have access to `round1_analysis` - a text analysis of solutions from Round 1.
-Compare the solutions and identify patterns that distinguish high vs low performers.
+---
 
-**Available Variables:**
+## Available Variables:**
 - `round1_analysis`: String containing the full analysis from Round 1 (markdown format)
 - `rollout_df`: Original rollout data (for additional context if needed)
 
 ---
 
-## IMPORTANT: You MUST use the REPL first!
+## REPL-First Workflow
 
-Before producing any answer, you MUST:
-1. First run code to inspect `round1_analysis` (e.g., `print(round1_analysis[:5000])`)
-2. Use `llm_query()` if needed to analyze the content
-3. Build your analysis step by step using print statements
-4. Only call FINAL_VAR when you have a complete answer in a variable
+**You are in a REPL environment.** You MUST execute code before producing any answer.
 
-⚠️ Do NOT call FINAL() or FINAL_VAR() without first running REPL code!
-⚠️ Your first action should ALWAYS be to run code that explores the data.
+### Required Workflow:
+1. **FIRST**: Run exploratory code (e.g., `print(round1_analysis[:3000])`)
+2. **THEN**: Analyze incrementally using print statements and `llm_query()` if needed
+3. **FINALLY**: Store complete answer in `final_answer` variable and call `FINAL_VAR(final_answer)`
+
+### Available Functions:
+- `llm_query(prompt)` - Call the LLM for sub-analysis
+- `llm_query_batched(prompts)` - Batch multiple LLM calls
+- `FINAL_VAR(variable_name)` - Return your final answer (call ONLY when done)
+
+❌ **DO NOT** call `FINAL_VAR()` without first running REPL code  
+❌ **DO NOT** produce a final answer in your first response  
+✅ **DO** start by exploring the data with `print()` statements
 
 ---
 
-### A. Solution Classification
+## Analysis Structure
+
+
+### 1. Performance Stratification
 
 First, identify and categorize all solutions by performance:
 
@@ -305,33 +318,26 @@ First, identify and categorize all solutions by performance:
 **Low Score Solutions (percentile < 0.6):**
 - List each with Solution ID and Score
 
-### B. Pattern Matrix
+### 2. Contrastive Pattern Analysis (High vs Mid/Low)
+For each key dimension (preprocessing, features, augmentation, model, training, other):
 
-Create a table comparing key implementation choices:
+**[Dimension Name]**
+- **What high-score solutions did**: [Description with frequency/count]
+- **What low-score solutions did**: [Description with frequency/count]  
+- **Concrete difference**: [Specific technical difference that explains the performance gap]
+- **Why do these patterns matter?** (Underlying reasoning)
+- **What should future solvers do?** (Actionable recommendations)
 
-| Dimension | High Score Implementations | Low Score Implementations |
-|-----------|---------------------------|---------------------------|
-| Data preprocessing | [Methods used] | [Methods used] |
-| Feature engineering | ... | ... |
-| Data augmentation | ... | ... |
-| Model selection | ... | ... |
-| Training methodology | ... | ... |
-| Notable details | ... | ... |
+**Focus on dimensions where high and low scores clearly diverge.**
 
-### C. Critical Differences
+### 3. Unique High-Performing Approaches (Diversity Preservation)
 
-For each dimension where high and low scores diverge significantly:
+**GOAL: Identify rare but effective techniques that could be lost in convergence to common patterns.**
 
-**[Dimension name]**
-- **What high-score solutions did:** [Description with frequency]
-- **What low-score solutions did:** [Description with frequency]
-- **Concrete difference:** [Specific technical difference]
-
-### D. Key Insights
-
-- **High-score convergence:** Which techniques appeared in most high-score solutions?
-- **Low-score anti-patterns:** Which mistakes appeared in most low-score solutions?
-- **Recommendations:** Based on patterns, what should future solutions prioritize?
+Examine **top-tier solutions (≥ 0.8 percentile)** for techniques that are:
+- ✅ **Rare**: low frequency
+- ✅ **Effective**: Present in top-scoring solutions
+- ✅ **Non-obvious**: Not just standard practice with different naming
 
 ---
 

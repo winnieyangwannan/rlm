@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
     parser.add_argument("--task-name", type=str, default="vinbigdata-chest-xray-abnormalities-detection", help="Specific task name to analyze (optional)")
     parser.add_argument("--max-depth", type=int, default=2, help="Max recursion depth for RLM")
-    parser.add_argument("--max-iterations", type=int, default=100, help="Max iterations for RLM")
+    parser.add_argument("--max-iterations", type=int, default=10, help="Max iterations for RLM")
     parser.add_argument("--verbose", action="store_true", default=True, help="Enable verbose output")
     return parser.parse_args()
 
@@ -133,25 +133,26 @@ def build_question(task_name: str | None = None) -> str:
     
     return f"""## Task
 
-Analyze code solutions {task_filter} by documenting what each solution implements.
+Analyze code solutions {task_filter} by documenting and understanding what each solution implements.
 
 **How to access the data:**
-- Each row in `rollout_df` is one agent's attempt at the task
+- Each row in `rollout_df` is agent's attempt at the task
 - `rollout_df["code"]` contains the final submitted Python solution (may be None if no valid submission)
 - `rollout_df["valid_submission"]` indicates if the submission was valid
 - `rollout_df["percentile"]` is the score (0-1, higher is better)
+**Analysis scope:** Only analyze rows where valid_submission == True
 
 ---
 
 ## Part 0: Task Analysis
 
-Extract from `rollout_df["task_description"].iloc[0]`:
+The analysis begins with understanding the task context from `rollout_df["task_description"].iloc[0]`:
 
-1. **Problem Type**: Classification/Regression/Object Detection/etc.
-2. **Domain**: Healthcare/Finance/etc.
-3. **Input Format**: Images/Tabular/Text/etc.
-4. **Evaluation Metric**: What metric is used and what it optimizes for
-5. **Key Challenges**: What makes this task difficult?
+1. **Problem Type**: The type of machine learning problem (Classification/Regression/Object Detection/etc.)
+2. **Domain**: The application domain (Healthcare/Finance/etc.)
+3. **Input Format**: The nature of the input data (Images/Tabular/Text/etc.)
+4. **Evaluation Metric**: The metric used for scoring and what it optimizes for
+5. **Key Challenges**: The factors that make this task difficult
 
 ---
 
@@ -165,49 +166,68 @@ For each **valid** solution (where `valid_submission == True`), analyze the code
 **Score Percentile:** [percentile]
 
 #### 1. Data Preprocessing
-- Input data loading method
-- Missing value handling (method, columns affected)
-- Data cleaning steps (outlier removal, filtering, etc.)
-- Normalization/scaling (which columns, which method)
-- Data type conversions
-- Train/test split approach
+The data pipeline from raw input to model-ready format, including what was actually implemented:
+- Data loading and splitting approaches
+- Cleaning strategies (missing values, outliers, filtering)
+- Transformations applied (scaling, encoding, type conversions)
+- Data augmentation techniques (if any)
 - Other preprocessing steps
-
-#### 2. Feature Engineering  
-- Features created (list each with formula/method if possible)
-- Feature selection/reduction techniques used
+ 
+#### 2. Feature Engineering
+- New features that were created and their derivation
+- Feature selection or dimensionality reduction methods
 - Domain-specific transformations
-- Interaction terms or polynomial features
-- Time-based features (if applicable)
+- When no feature engineering was performed, this is noted explicitly
 
-#### 3. Synthetic Data / Data Augmentation
-- Whether synthetic data was generated: Yes/No
-- If yes: Generation method, volume, and integration approach
-- Specific augmentation techniques used
-
-#### 4. Model Selection
-- Primary algorithm(s) used (exact model class/function)
+#### 3. Model Selection
+- The primary algorithm(s) used (exact model class/function)
 - Model hyperparameters (learning rate, depth, n_estimators, etc.)
-- Ensemble approach (if any): stacking, blending, voting, etc.
-- Number of models in ensemble
-- Pretrained models: [Which models, from where (ImageNet, HuggingFace, etc.)]
-- External datasets: [Any additional data used, sources]
+- Ensemble architecture (if any): stacking, blending, voting, etc.
+- Number of models in the ensemble (if applicable)
+- Pretrained models: which ones and how they were used (feature extraction, fine-tuning, etc.)
 
-#### 5. Training Methodology
-- Cross-validation scheme (k-fold, stratified, time-series split, etc.)
-- Hyperparameter tuning approach (grid search, random search, Bayesian, manual)
-- Training/validation split ratios
-- Early stopping criteria (if applicable)
-- Number of training epochs/iterations
+#### 4. Training Methodology
+- Hyperparameter selection method (if any)
+- Training configuration (relevant parameters for the model type)
+- Other important training details (early stopping, regularization, etc.)
 
-#### 6. Evaluation & Submission
+#### 5. Evaluation & Submission
 - Final prediction method (mean, median, weighted average, etc.)
 - Post-processing of predictions
 
-#### 7. Notable Implementation Details
-- Any unique approaches or novel techniques
+#### 6. Notable Implementation Details
 - Computational considerations (GPU usage, runtime optimizations)
-- Anything else significant to the solution's approach
+- Other unique approaches or novel techniques
+- Other significant aspects of the solution's approach
+
+---
+
+## Part 2: Performance Analysis
+
+After documenting all solutions, provide deeper analysis for each:
+
+### For High-Scoring Solutions (percentile ≥ 0.7)
+
+For each high-scoring solution, explain:
+- **Why it works**: Which specific technical choices (from Part 1) likely contributed most to the high score? Cite evidence from the code.
+- **Key strengths**: What does this solution do particularly well compared to lower-scoring ones?
+- **Alignment with task**: How do the choices align with the task's evaluation metric and challenges identified in Part 0?
+
+### For Low-Scoring Solutions (percentile < 0.4)
+
+For each low-scoring solution, explain:
+- **Likely failure points**: Identify only the components that plausibly caused the low score. Not every aspect needs to be blamed—focus on:
+  - Critical omissions (e.g., no cross-validation, missing essential preprocessing)
+  - Poor choices for this specific task (e.g., wrong model family, metric mismatch)
+  - Implementation issues (e.g., data leakage, incorrect target encoding)
+- **Evidence**: For each identified issue, cite specific code evidence or contrast with what high-scoring solutions did differently.
+- **What would help**: Concrete changes that would likely improve the score.
+
+### For Medium-Scoring Solutions (0.4 ≤ percentile < 0.7)
+
+Briefly note:
+- What's working reasonably well
+- The most likely bottleneck preventing higher performance
 
 ---
 
@@ -312,16 +332,13 @@ print(f"Loaded {{len(rollout_df)}} rollouts")
     root_prompt = f"{data_schema}\n\nQUESTION:\n{question}"
 
     # Run RLM completion
-    print(f"\nRunning RLM analysis (max_depth={args.max_depth}, max_iterations={args.max_iterations})...\n")
+    print(f"\nRunning RLM analysis (max_depth={args.max_depth}, max_iterations={args.max_iterations})...")
+    print("(GPT-5 API calls may take 1-5+ minutes per iteration - please wait...)\n")
     result = rlm.completion(
         prompt="",
         root_prompt=root_prompt
     )
 
-    print("\n" + "=" * 80)
-    print("FINAL RESULT:")
-    print("=" * 80)
-    print(result)
 
 
 if __name__ == "__main__":

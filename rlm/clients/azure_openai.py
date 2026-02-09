@@ -93,16 +93,20 @@ class AzureOpenAIClient(BaseLM):
         last_exception = None
         for attempt in range(MAX_RETRIES):
             try:
+                print(f"[Azure OpenAI] Calling {model} (attempt {attempt + 1}/{MAX_RETRIES})...", flush=True)
+                start_time = time.time()
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
                 )
+                elapsed = time.time() - start_time
+                print(f"[Azure OpenAI] Response received in {elapsed:.1f}s", flush=True)
                 self._track_cost(response, model)
                 return response.choices[0].message.content
             except openai.RateLimitError as e:
                 last_exception = e
                 if attempt < MAX_RETRIES - 1:
-                    print(f"Rate limit hit, retrying in {RETRY_DELAY:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})...")
+                    print(f"[Azure OpenAI] Rate limit hit, retrying in {RETRY_DELAY:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})...", flush=True)
                     time.sleep(RETRY_DELAY)
         raise last_exception
 

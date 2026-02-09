@@ -1,16 +1,16 @@
 """
-Quickstart example for analyzing MLE Bench rollout data with RLM.
+Two-round pipeline for analyzing MLE Bench rollout data with RLM.
 
-This script demonstrates how to:
-1. Load flattened MLE Bench trajectory data as a pandas DataFrame (FAST)
-2. Provide a data schema description in the root_prompt
-3. Query the RLM to analyze the rollout data
+This script demonstrates a two-round analysis pipeline:
+1. Round 1: Analyze each rollout → output structured JSON via FINAL_VAR
+2. Round 2: Load analysis from log → compare/aggregate solutions → final insights
 
 Performance optimization: Uses setup_code to load data directly into REPL,
 bypassing JSON serialization of large context data.
 """
 
 import argparse
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -29,7 +29,7 @@ load_dotenv()
 DEFAULT_CONFIG = {
     "run_id": 513,
     "model_name": "gpt-5",
-    "job_name": "summarization",
+    "job_name": "summarization_comparison",
     "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps",
     "codebase_extensions": [".py", ".md", ".yaml"],
 }
@@ -43,8 +43,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
     parser.add_argument("--task-name", type=str, default="vinbigdata-chest-xray-abnormalities-detection", help="Specific task name to analyze (optional)")
     parser.add_argument("--max-depth", type=int, default=2, help="Max recursion depth for RLM")
-    parser.add_argument("--max-iterations", type=int, default=100, help="Max iterations for RLM")
+    parser.add_argument("--max-iterations", type=int, default=20, help="Max iterations for RLM")
     parser.add_argument("--verbose", action="store_true", default=True, help="Enable verbose output")
+    parser.add_argument("--round1-log", type=str, default="/checkpoint/maui_sft/winnieyangwn/rlm_dumps/gpt-5_summarization_comparison_round1_513_2026-02-08_07-19-05_710f5dca.jsonl", help="Path to existing Round 1 log file. If provided, skips Round 1 and starts from Round 2.")
+    parser.add_argument("--round1-only", action="store_true", default=False, help="Only run Round 1 (skip Round 2 comparison). Useful for batch processing.")
     return parser.parse_args()
 
 
@@ -80,6 +82,53 @@ def validate_path(path: str, description: str) -> Path:
 def get_data_path(run_id: int) -> str:
     """Get the data path for a given run ID."""
     return f"/checkpoint/maui_sft/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
+
+
+def load_analysis_from_log(log_path: str) -> str | None:
+    """Extract final_answer from RLM log.
+    
+    Args:
+        log_path: Path to the JSONL log file from Round 1
+        
+    Returns:
+        The final_answer string (markdown or JSON), or None if not found
+    """
+    log_path = log_path.strip()  # Remove any leading/trailing whitespace
+    if not Path(log_path).exists():
+        print(f"Log file not found: {log_path}")
+        return None
+    
+    with open(log_path) as f:
+        for line in f:
+            entry = json.loads(line)
+            # Find the iteration with a final_answer
+            if entry.get("type") == "iteration" and entry.get("final_answer"):
+                final_answer = entry["final_answer"]
+                # Check for error messages that indicate REPL execution failed
+                if final_answer.startswith("Error:"):
+                    print(f"REPL execution failed: {final_answer}")
+                    return None
+                print(f"Loaded final_answer from log ({len(final_answer)} chars)")
+                return final_answer
+    
+    print("No final_answer found in log")
+    return None
+
+
+def prepare_round2_context(round1_analysis: str, output_file: str) -> str:
+    """Save Round 1 analysis to file for Round 2 to load.
+    
+    Args:
+        round1_analysis: The markdown/text analysis from Round 1
+        output_file: Path to save the analysis
+        
+    Returns:
+        Path to the saved file
+    """
+    with open(output_file, "w") as f:
+        f.write(round1_analysis)
+    print(f"Saved Round 1 analysis to: {output_file}")
+    return output_file
 
 
 # =============================================================================
@@ -128,7 +177,7 @@ ACCESS EXAMPLES:
 
 
 def build_question(task_name: str | None = None) -> str:
-    """Build the analysis question, optionally scoped to a specific task."""
+    """Build the Round 1 analysis question - simple markdown output like gpt5_mle_summarization.py."""
     task_filter = f"for the Kaggle competition **{task_name}**" if task_name else "across all tasks in the dataset"
     
     return f"""## Task
@@ -169,45 +218,31 @@ For each **valid** solution (where `valid_submission == True`), analyze the code
 - Missing value handling (method, columns affected)
 - Data cleaning steps (outlier removal, filtering, etc.)
 - Normalization/scaling (which columns, which method)
-- Data type conversions
 - Train/test split approach
-- Other preprocessing steps
 
 #### 2. Feature Engineering  
 - Features created (list each with formula/method if possible)
 - Feature selection/reduction techniques used
 - Domain-specific transformations
-- Interaction terms or polynomial features
-- Time-based features (if applicable)
 
 #### 3. Synthetic Data / Data Augmentation
 - Whether synthetic data was generated: Yes/No
 - If yes: Generation method, volume, and integration approach
-- Specific augmentation techniques used
 
 #### 4. Model Selection
 - Primary algorithm(s) used (exact model class/function)
 - Model hyperparameters (learning rate, depth, n_estimators, etc.)
 - Ensemble approach (if any): stacking, blending, voting, etc.
-- Number of models in ensemble
-- Pretrained models: [Which models, from where (ImageNet, HuggingFace, etc.)]
-- External datasets: [Any additional data used, sources]
+- Pretrained models: [Which models, from where]
 
 #### 5. Training Methodology
-- Cross-validation scheme (k-fold, stratified, time-series split, etc.)
-- Hyperparameter tuning approach (grid search, random search, Bayesian, manual)
-- Training/validation split ratios
+- Cross-validation scheme (k-fold, stratified, etc.)
+- Hyperparameter tuning approach
 - Early stopping criteria (if applicable)
-- Number of training epochs/iterations
 
-#### 6. Evaluation & Submission
-- Final prediction method (mean, median, weighted average, etc.)
-- Post-processing of predictions
-
-#### 7. Notable Implementation Details
+#### 6. Notable Implementation Details
 - Any unique approaches or novel techniques
 - Computational considerations (GPU usage, runtime optimizations)
-- Anything else significant to the solution's approach
 
 ---
 
@@ -219,8 +254,8 @@ When you have completed your analysis:
 2. **Before returning, verify the variable exists** by printing: `print("final_answer" in dir())`
 3. **Return using exactly**: `FINAL_VAR(final_answer)`
 
-⚠️ Do NOT use a different variable name like `cleaned_final_output`, `result`, or `output`.
-⚠️ Do NOT call FINAL_VAR with a variable that doesn't exist - this will cause an error.
+⚠️ Do NOT use a different variable name.
+⚠️ Do NOT call FINAL_VAR with a variable that doesn't exist.
 
 Example pattern:
 ```python
@@ -232,6 +267,79 @@ print("Variable 'final_answer' exists:", "final_answer" in dir())
 ```
 
 Then in your next response, use: FINAL_VAR(final_answer)"""
+
+
+def build_round2_question() -> str:
+    """Build the Round 2 comparison question."""
+    return """## Task
+
+You have access to `round1_analysis` - a text analysis of solutions from Round 1.
+Compare the solutions and identify patterns that distinguish high vs low performers.
+
+**Available Variables:**
+- `round1_analysis`: String containing the full analysis from Round 1 (markdown format)
+- `rollout_df`: Original rollout data (for additional context if needed)
+
+---
+
+## IMPORTANT: You MUST use the REPL first!
+
+Before producing any answer, you MUST:
+1. First run code to inspect `round1_analysis` (e.g., `print(round1_analysis[:5000])`)
+2. Use `llm_query()` if needed to analyze the content
+3. Build your analysis step by step using print statements
+4. Only call FINAL_VAR when you have a complete answer in a variable
+
+⚠️ Do NOT call FINAL() or FINAL_VAR() without first running REPL code!
+⚠️ Your first action should ALWAYS be to run code that explores the data.
+
+---
+
+### A. Solution Classification
+
+First, identify and categorize all solutions by performance:
+
+**High Score Solutions (percentile >= 0.6):**
+- List each with Solution ID and Score
+
+**Low Score Solutions (percentile < 0.6):**
+- List each with Solution ID and Score
+
+### B. Pattern Matrix
+
+Create a table comparing key implementation choices:
+
+| Dimension | High Score Implementations | Low Score Implementations |
+|-----------|---------------------------|---------------------------|
+| Data preprocessing | [Methods used] | [Methods used] |
+| Feature engineering | ... | ... |
+| Data augmentation | ... | ... |
+| Model selection | ... | ... |
+| Training methodology | ... | ... |
+| Notable details | ... | ... |
+
+### C. Critical Differences
+
+For each dimension where high and low scores diverge significantly:
+
+**[Dimension name]**
+- **What high-score solutions did:** [Description with frequency]
+- **What low-score solutions did:** [Description with frequency]
+- **Concrete difference:** [Specific technical difference]
+
+### D. Key Insights
+
+- **High-score convergence:** Which techniques appeared in most high-score solutions?
+- **Low-score anti-patterns:** Which mistakes appeared in most low-score solutions?
+- **Recommendations:** Based on patterns, what should future solutions prioritize?
+
+---
+
+## Returning Your Final Answer
+
+After you have analyzed the data using REPL code:
+1. Store your complete answer in a variable named `final_answer`
+2. Call: `FINAL_VAR(final_answer)`"""
 
 
 def main() -> None:
@@ -252,17 +360,17 @@ def main() -> None:
     # Build schema description
     data_schema = build_data_schema(num_rollouts)
 
-    # Set up logger
-    logger = RLMLogger(
-        log_dir=DEFAULT_CONFIG["log_dir"],
-        file_name=f"{args.model}_{args.job_name}_{args.run_id}"
-    )
+    # Validate required environment variables
+    required_env_vars = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"]
+    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+    if missing_vars:
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     # Setup code: load data directly into REPL (bypasses JSON serialization)
-    # Optionally filter by task_name if specified
     if args.task_name:
         setup_code = f"""
 import pandas as pd
+import json
 
 # Load rollout data as DataFrame
 rollout_df = pd.read_json('{data_path}', lines=True)
@@ -275,20 +383,123 @@ print(f"Filtered to {{len(rollout_df)}} rollouts for task: {args.task_name}")
     else:
         setup_code = f"""
 import pandas as pd
+import json
 
 # Load rollout data as DataFrame
 rollout_df = pd.read_json('{data_path}', lines=True)
 print(f"Loaded {{len(rollout_df)}} rollouts")
 """
 
-    # Validate required environment variables
-    required_env_vars = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"]
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-    if missing_vars:
-        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
+    # =========================================================================
+    # ROUND 1: Analyze each rollout → structured JSON (skip if --round1-log provided)
+    # =========================================================================
+    round1_log_path = None
+    
+    if args.round1_log:
+        # Skip Round 1, use existing log
+        print("\n" + "=" * 80)
+        print(f"SKIPPING ROUND 1: Loading analysis from existing log")
+        print(f"Log path: {args.round1_log}")
+        print("=" * 80)
+        
+        round1_log_path = args.round1_log
+        if not Path(round1_log_path).exists():
+            raise FileNotFoundError(f"Round 1 log not found: {round1_log_path}")
+    else:
+        # Run Round 1
+        print("\n" + "=" * 80)
+        print("ROUND 1: Analyzing individual rollouts...")
+        print("=" * 80)
 
-    # Create the RLM Instance
-    rlm = RLM(
+        logger_round1 = RLMLogger(
+            log_dir=DEFAULT_CONFIG["log_dir"],
+            file_name=f"{args.model}_{args.job_name}_round1_{args.run_id}"
+        )
+
+        rlm_round1 = RLM(
+            backend="azure_openai",
+            backend_kwargs={
+                "model_name": args.model,
+                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+                "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+                "azure_deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                "api_version": "2025-03-01-preview",
+            },
+            environment="local",
+            environment_kwargs={
+                "setup_code": setup_code,
+            },
+            max_depth=args.max_depth,
+            max_iterations=args.max_iterations,
+            logger=logger_round1,
+            verbose=args.verbose,
+        )
+
+        question_round1 = build_question(args.task_name)
+        root_prompt_round1 = f"{data_schema}\n\nQUESTION:\n{question_round1}"
+
+        print(f"\nRunning Round 1 (max_depth={args.max_depth}, max_iterations={args.max_iterations})...\n")
+        result_round1 = rlm_round1.completion(
+            prompt="",
+            root_prompt=root_prompt_round1
+        )
+
+        print("\n" + "-" * 40)
+        print("ROUND 1 COMPLETE")
+        print(f"Log saved to: {logger_round1.log_file_path}")
+        print("-" * 40)
+        
+        round1_log_path = logger_round1.log_file_path
+
+    # =========================================================================
+    # PARSE ROUND 1 LOG → extract final_answer
+    # =========================================================================
+    print("\nParsing Round 1 log for analysis...")
+    round1_analysis = load_analysis_from_log(round1_log_path)
+
+    if round1_analysis is None:
+        print("ERROR: Could not extract analysis from Round 1 log. Exiting.")
+        print(f"Log path: {round1_log_path}")
+        return
+
+    # =========================================================================
+    # ROUND 2: Compare solutions using Round 1 analysis (skip if --round1-only)
+    # =========================================================================
+    if args.round1_only:
+        print("\n" + "=" * 80)
+        print("ROUND 1 ONLY MODE: Skipping Round 2 comparison")
+        print(f"Round 1 log saved to: {round1_log_path}")
+        print("=" * 80)
+        return
+
+    print("\n" + "=" * 80)
+    print("ROUND 2: Comparing solutions...")
+    print("=" * 80)
+
+    # Save Round 1 analysis to file for Round 2 to load
+    analysis_file = f"/tmp/round1_analysis_{args.run_id}_{args.task_name or 'all'}.txt"
+    prepare_round2_context(round1_analysis, analysis_file)
+
+    setup_code_round2 = f"""
+import pandas as pd
+
+# Load original rollout data
+rollout_df = pd.read_json('{data_path}', lines=True)
+{"rollout_df = rollout_df[rollout_df['task_name'] == '" + args.task_name + "']" if args.task_name else ""}
+print(f"Loaded {{len(rollout_df)}} rollouts")
+
+# Load Round 1 analysis (markdown text)
+with open('{analysis_file}') as f:
+    round1_analysis = f.read()
+print(f"Loaded Round 1 analysis ({{len(round1_analysis)}} chars)")
+"""
+
+    logger_round2 = RLMLogger(
+        log_dir=DEFAULT_CONFIG["log_dir"],
+        file_name=f"{args.model}_{args.job_name}_round2_{args.run_id}"
+    )
+
+    rlm_round2 = RLM(
         backend="azure_openai",
         backend_kwargs={
             "model_name": args.model,
@@ -299,29 +510,44 @@ print(f"Loaded {{len(rollout_df)}} rollouts")
         },
         environment="local",
         environment_kwargs={
-            "setup_code": setup_code,
+            "setup_code": setup_code_round2,
         },
         max_depth=args.max_depth,
         max_iterations=args.max_iterations,
-        logger=logger,
+        logger=logger_round2,
         verbose=args.verbose,
     )
 
-    # Build the question and root_prompt
-    question = build_question(args.task_name)
-    root_prompt = f"{data_schema}\n\nQUESTION:\n{question}"
+    # Build Round 2 prompt
+    round2_schema = f"""
+================================================================================
+AVAILABLE VARIABLES
+================================================================================
+  - `round1_analysis`: String containing the full analysis from Round 1 (markdown format)
+    - Contains task analysis and individual solution summaries
+    - Each solution has: ID, percentile, preprocessing, feature engineering, 
+      augmentation, model selection, training, notable details
+  - `rollout_df`: Original rollout DataFrame (for additional context if needed)
+  - `pd`: pandas is already imported
+"""
+    question_round2 = build_round2_question()
+    root_prompt_round2 = f"{round2_schema}\n\nQUESTION:\n{question_round2}"
 
-    # Run RLM completion
-    print(f"\nRunning RLM analysis (max_depth={args.max_depth}, max_iterations={args.max_iterations})...\n")
-    result = rlm.completion(
+    print(f"\nRunning Round 2 (max_depth={args.max_depth}, max_iterations={args.max_iterations})...\n")
+    result_round2 = rlm_round2.completion(
         prompt="",
-        root_prompt=root_prompt
+        root_prompt=root_prompt_round2
     )
 
     print("\n" + "=" * 80)
-    print("FINAL RESULT:")
+    print("ROUND 2 COMPLETE - FINAL COMPARISON RESULT:")
     print("=" * 80)
-    print(result)
+    print(result_round2)
+    print("\n" + "-" * 40)
+    print(f"Round 1 log: {round1_log_path}")
+    print(f"Round 2 log: {logger_round2.log_file_path}")
+    print(f"Analysis file: {analysis_file}")
+    print("-" * 40)
 
 
 if __name__ == "__main__":

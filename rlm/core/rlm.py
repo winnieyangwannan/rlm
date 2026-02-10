@@ -309,8 +309,15 @@ class RLM:
         code_block_strs = find_code_blocks(response)
         code_blocks = []
 
-        for code_block_str in code_block_strs:
+        for i, code_block_str in enumerate(code_block_strs):
+            if code_block_strs:
+                code_preview = code_block_str[:100].replace("\n", " ")
+                if len(code_block_str) > 100:
+                    code_preview += "..."
+                print(f"[RLM] Executing code block {i + 1}/{len(code_block_strs)}: {code_preview}", flush=True)
             code_result: REPLResult = environment.execute_code(code_block_str)
+            if code_block_strs:
+                print(f"[RLM] Code block {i + 1}/{len(code_block_strs)} completed in {code_result.execution_time:.1f}s", flush=True)
             code_blocks.append(CodeBlock(code=code_block_str, result=code_result))
 
         iteration_time = time.perf_counter() - iter_start

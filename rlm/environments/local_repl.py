@@ -182,8 +182,17 @@ class LocalREPL(NonIsolatedEnv):
             return "Error: No LM handler configured"
 
         try:
+            prompt_preview = prompt[:80].replace("\n", " ") if prompt else ""
+            if len(prompt) > 80:
+                prompt_preview += "..."
+            print(f"[llm_query] Calling LM with prompt: {prompt_preview}", flush=True)
+            start_time = time.time()
+
             request = LMRequest(prompt=prompt, model=model, depth=self.depth)
             response = send_lm_request(self.lm_handler_address, request)
+
+            elapsed = time.time() - start_time
+            print(f"[llm_query] Response received in {elapsed:.1f}s", flush=True)
 
             if not response.success:
                 return f"Error: {response.error}"
@@ -211,9 +220,15 @@ class LocalREPL(NonIsolatedEnv):
             return ["Error: No LM handler configured"] * len(prompts)
 
         try:
+            print(f"[llm_query_batched] Calling LM with {len(prompts)} prompts...", flush=True)
+            start_time = time.time()
+
             responses = send_lm_request_batched(
                 self.lm_handler_address, prompts, model=model, depth=self.depth
             )
+
+            elapsed = time.time() - start_time
+            print(f"[llm_query_batched] All {len(prompts)} responses received in {elapsed:.1f}s", flush=True)
 
             results = []
             for response in responses:

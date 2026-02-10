@@ -35,7 +35,7 @@ DEFAULT_CONFIG = {
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Compare MLE Bench solutions given Round 1 summarization log")
-    parser.add_argument("--summarization-log", type=str, default="/checkpoint/maui_sft/winnieyangwn/rlm_dumps/archive/gpt5/summarization/gpt-5_summarization_513_2026-02-08_23-35-35_c4318c42.jsonl", help="Path to Round 1 summarization log file (required)")
+    parser.add_argument("--round1-log", type=str, default="/checkpoint/maui_sft/winnieyangwn/rlm_dumps/archive/gpt5/summarization/gpt-5_summarization_513_2026-02-08_23-35-35_c4318c42.jsonl", help="Path to Round 1 summarization log file (required)")
     parser.add_argument("--run-id", type=int, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
     parser.add_argument("--model", type=str, default=DEFAULT_CONFIG["model_name"], help="Model name to use")
     parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
@@ -109,14 +109,16 @@ def prepare_round2_context(round1_analysis: str, output_file: str) -> str:
 def build_round2_question() -> str:
     """Build the Round 2 comparison question."""
     return """## Goal
-Analyze summaries for previous solutions to identify:
+Analyze previous solutions and analysis to identify:
 1. **Patterns that distinguish high vs low performance** (optimization)
 2. **Critical failures that cause suboptimal results** (failure prevention)
 3. **Unique high-performing approaches** (diversity preservation)
 
-Your job is NOT only to summarize what solutions did, but also build a DEEP THEORY of what makes solutions succeed or fail on this specific task, supported by evidence from the solutions. Every claim should connect to a concrete property of the dataset, metric, or task structure. 
-Remember that you are building a causal model of performance on this task — a mental model that could PREDICT whether a new unseen solution would score high or low based on its design choices, given what you know about the data and metric.
-Generic ML advice (e.g., "tune hyperparameters," "use cross-validation") without task-specific justification is not useful.
+---
+
+## Available Variables:**
+- `round1_analysis`: String containing the full analysis from Round 1 (markdown format)
+- `rollout_df`: Original rollout data (for additional context if needed)
 
 ---
 
@@ -142,19 +144,7 @@ Generic ML advice (e.g., "tune hyperparameters," "use cross-validation") without
 
 ## Analysis Structure
 
-## Step 0: Task & Data Characterization (Complete BEFORE analyzing solutions)
-
-Before examining any solutions, reason about the task analysis:
-
-1. **What makes this task hard?** What are the core challenges a solver must overcome? (e.g., small N with high-dimensional features, heavy class imbalance, noisy labels, temporal dependencies, distribution shift between train/test)
-
-2. **What are the likely failure traps?** Given the above, what are the most tempting-but-wrong approaches a solver might take?
-
-3. **What would an ideal solution need to get right?** Given the data properties and metric, what capabilities must a solution have?
-
-Use this as your analytical lens for everything that follows. 
-
-### Step 1. Contrastive Pattern Analysis (High vs Low)
+### 1. Contrastive Pattern Analysis (High vs Low)
 
 Use these thresholds throughout your analysis:
 - **High Score Solutions**: percentile >= 0.6
@@ -165,46 +155,12 @@ For each key dimension (Data preprocessing, feature engineering, model selection
 **[Dimension Name]**
 - **What high-score solutions did**: [Description with frequency/count]
 - **What low-score solutions did**: [Description with frequency/count]  
-- **Concrete patterns**: [Specific technical difference that explains the performance gap]
-- When analyzing patterns, reason like a scientist, not a reporter:
-    - **Don't just catalog differences** — explain the causal chain from choice → mechanism → outcome-
-- **Why do these patterns matter? — causal mechanism**:  For each success mode, Explain the underlying reason this difference affects performance. Go beyond surface correlation. Ask yourself: *What property of this dataset/task/metric makes this choice better?* For example, don't just say "high-score solutions used ensembles" — explain *why* ensembling helps for this specific problem (e.g., high variance in single models due to small training set, diverse error profiles across model families, etc.)
-- **How it manifests in the score**: For each failure mode, explain the mechanism by which this error degrades the specific evaluation metric
+- **Concrete difference**: [Specific technical difference that explains the performance gap]
+- **Why do these patterns matter?** (Underlying reasoning)
 - **What should future solvers do?** (Actionable recommendations)
 
----
 
-### Step 2. Cross-Dimensional Interactions
-
-After analyzing individual dimensions, identify the most important INTERACTIONS between choices:
-
-- **Choices that only work together**: Are there technique combinations where A helps only when paired with B? (e.g., aggressive feature engineering + simple model vs. minimal features + complex model — which strategy won here and WHY given this specific data?)
-
----
-
-### Step 3. Surprises & Expectation Violations
-
-- **What I expected to see but didn't**: [Techniques you'd expect to matter for this task type but that didn't differentiate high from low — and your best explanation for why]
-- **What I didn't expect to matter but did**: [Unexpected differentiators — and your theory for why they helped]
-- **Contradictions in the data**: [Cases where a technique helped some solutions but hurt others — and what contextual factor might explain the difference]
-
----
-
-
-### Step 4. Matched-Pair Deep Dives
-
-Identify 2-3 pairs of solutions where:
-- One scored high, one scored low
-- They share a similar overall approach but differ in one or a few key decisions
-
-For each pair:
-- **Shared approach**: [What they have in common]
-- **Key divergence(s)**: [Where they differ]
-- **Why the divergence matters**: [Trace exactly how the difference propagates to the final score]
-
----
-
-### Step 5. Unique High-Performing Approaches (Diversity Preservation)
+### 2. Unique High-Performing Approaches (Diversity Preservation)
 
 **GOAL: Identify rare but effective techniques that could be lost in convergence to common patterns.**
 
@@ -229,9 +185,9 @@ def main() -> None:
     validate_path(data_path, "Data file")
     
     # Validate Round 1 log exists
-    summarization_log_path = args.summarization_log
-    if not Path(summarization_log_path).exists():
-        raise FileNotFoundError(f"Round 1 log not found: {summarization_log_path}")
+    round1_log_path = args.round1_log
+    if not Path(round1_log_path).exists():
+        raise FileNotFoundError(f"Round 1 log not found: {round1_log_path}")
 
     # Validate required environment variables
     required_env_vars = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"]
@@ -243,14 +199,14 @@ def main() -> None:
     # PARSE ROUND 1 LOG → extract final_answer
     # =========================================================================
     print("\n" + "=" * 80)
-    print(f"Loading analysis from Round 1 log: {summarization_log_path}")
+    print(f"Loading analysis from Round 1 log: {round1_log_path}")
     print("=" * 80)
     
-    round1_analysis = load_analysis_from_log(summarization_log_path)
+    round1_analysis = load_analysis_from_log(round1_log_path)
 
     if round1_analysis is None:
         print("ERROR: Could not extract analysis from Round 1 log. Exiting.")
-        print(f"Log path: {summarization_log_path}")
+        print(f"Log path: {round1_log_path}")
         return
 
     # =========================================================================
@@ -278,12 +234,9 @@ with open('{analysis_file}') as f:
 print(f"Loaded Round 1 analysis ({{len(round1_analysis)}} chars)")
 """
 
-    log_file_name = f"{args.model}_{args.job_name}_{args.run_id}"
-    if args.task_name:
-        log_file_name += f"_{args.task_name}"
     logger_round2 = RLMLogger(
         log_dir=DEFAULT_CONFIG["log_dir"],
-        file_name=log_file_name
+        file_name=f"{args.model}_{args.job_name}_{args.run_id}"
     )
 
     rlm_round2 = RLM(

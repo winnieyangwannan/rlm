@@ -32,16 +32,18 @@ DEFAULT_CONFIG = {
     "job_name": "summarization",
     "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps",
     "codebase_extensions": [".py", ".md", ".yaml"],
+    "account": "maui_sft"
 }
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Analyze MLE Bench rollout data with RLM")
+    parser.add_argument("--account", type=str, default=DEFAULT_CONFIG["account"], help="Account name for data path")
     parser.add_argument("--run-id", type=int, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
     parser.add_argument("--model", type=str, default=DEFAULT_CONFIG["model_name"], help="Model name to use")
     parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
-    parser.add_argument("--task-name", type=str, default="vinbigdata-chest-xray-abnormalities-detection", help="Specific task name to analyze (optional)")
+    parser.add_argument("--task-name", type=str, default="iwildcam-2019-fgvc6", help="Specific task name to analyze (optional)")
     parser.add_argument("--max-depth", type=int, default=2, help="Max recursion depth for RLM")
     parser.add_argument("--max-iterations", type=int, default=10, help="Max iterations for RLM")
     parser.add_argument("--verbose", action="store_true", default=True, help="Enable verbose output")
@@ -77,9 +79,9 @@ def validate_path(path: str, description: str) -> Path:
     return p
 
 
-def get_data_path(run_id: int) -> str:
+def get_data_path(account: str, run_id: int) -> str:
     """Get the data path for a given run ID."""
-    return f"/checkpoint/maui_sft/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
+    return f"/checkpoint/{account}/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
 
 
 # =============================================================================
@@ -258,7 +260,7 @@ def main() -> None:
     args = parse_args()
     
     # Build paths
-    data_path = get_data_path(args.run_id)
+    data_path = get_data_path(args.account, args.run_id)
     validate_path(data_path, "Data file")
 
     # Get row count without loading data (fast)
@@ -273,9 +275,12 @@ def main() -> None:
     data_schema = build_data_schema(num_rollouts)
 
     # Set up logger
+    log_file_name = f"{args.model}_{args.job_name}_{args.run_id}"
+    if args.task_name:
+        log_file_name += f"_{args.task_name}"
     logger = RLMLogger(
         log_dir=DEFAULT_CONFIG["log_dir"],
-        file_name=f"{args.model}_{args.job_name}_{args.run_id}"
+        file_name=log_file_name
     )
 
     # Setup code: load data directly into REPL (bypasses JSON serialization)

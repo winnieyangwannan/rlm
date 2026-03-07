@@ -50,7 +50,7 @@ class LLMProxyHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(json.dumps(data, ensure_ascii=True).encode())
 
     def _handle_single(self, body: dict) -> dict:
         if not self.lm_handler_address:

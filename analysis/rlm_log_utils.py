@@ -1,4 +1,5 @@
 import json
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -206,3 +207,40 @@ def extract_all(log_path: str | Path) -> dict[str, Any]:
         "rlm_calls_summary": get_sub_rlm_calls_summary(iterations),
         "num_iterations": len(iterations),
     }
+
+
+def archive_file(file_path: str, archive_dir: str = "/checkpoint/maui_sft/winnieyangwn/rlm_dumps/archive/gpt5/comparison/") -> list[str]:
+    """Move a file and its corresponding .md file to the archive directory.
+    
+    Args:
+        file_path: Path to the .jsonl file to archive
+        archive_dir: Destination archive directory
+        
+    Returns:
+        List of new paths of the archived files
+    """
+    import os
+    archived_paths = []
+    
+    # Archive the main file
+    dest_path = os.path.join(archive_dir, os.path.basename(file_path))
+    if os.path.exists(dest_path):
+        print(f"Skipped (already exists): {dest_path}")
+    else:
+        dest_path = shutil.move(file_path, archive_dir)
+        print(f"Archived: {file_path} -> {dest_path}")
+        archived_paths.append(dest_path)
+    
+    # Also archive the corresponding .md file if it exists
+    if file_path.endswith(".jsonl"):
+        md_path = file_path.replace(".jsonl", ".md")
+        if os.path.exists(md_path):
+            md_dest_path = os.path.join(archive_dir, os.path.basename(md_path))
+            if os.path.exists(md_dest_path):
+                print(f"Skipped (already exists): {md_dest_path}")
+            else:
+                md_dest_path = shutil.move(md_path, archive_dir)
+                print(f"Archived: {md_path} -> {md_dest_path}")
+                archived_paths.append(md_dest_path)
+    
+    return archived_paths

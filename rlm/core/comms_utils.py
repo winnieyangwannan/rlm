@@ -148,7 +148,8 @@ def socket_send(sock: socket.socket, data: dict) -> None:
 
     Protocol: 4-byte big-endian length prefix + UTF-8 JSON payload.
     """
-    payload = json.dumps(data).encode("utf-8")
+    # Use ensure_ascii=True to handle surrogate characters that can't be encoded as UTF-8
+    payload = json.dumps(data, ensure_ascii=True).encode("utf-8")
     sock.sendall(struct.pack(">I", len(payload)) + payload)
 
 

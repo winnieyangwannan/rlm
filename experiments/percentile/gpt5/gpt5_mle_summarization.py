@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 
 from rlm import RLM
 from rlm.logger import RLMLogger
+import json
 
 load_dotenv()
 
@@ -27,10 +28,11 @@ load_dotenv()
 # Configuration (defaults - can be overridden via CLI)
 # =============================================================================
 DEFAULT_CONFIG = {
-    "run_id": 513,
+    "run_id": "513",
     "model_name": "gpt-5",
     "job_name": "summarization",
-    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps",
+    "task_name": "plant-pathology-2021-fgvc8",
+    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps/summarization/",
     "codebase_extensions": [".py", ".md", ".yaml"],
     "account": "maui_sft"
 }
@@ -40,12 +42,13 @@ def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Analyze MLE Bench rollout data with RLM")
     parser.add_argument("--account", type=str, default=DEFAULT_CONFIG["account"], help="Account name for data path")
-    parser.add_argument("--run-id", type=int, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
+    parser.add_argument("--run_id", type=str, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
     parser.add_argument("--model", type=str, default=DEFAULT_CONFIG["model_name"], help="Model name to use")
-    parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
-    parser.add_argument("--task-name", type=str, default="iwildcam-2019-fgvc6", help="Specific task name to analyze (optional)")
-    parser.add_argument("--max-depth", type=int, default=2, help="Max recursion depth for RLM")
-    parser.add_argument("--max-iterations", type=int, default=10, help="Max iterations for RLM")
+    parser.add_argument("--job_name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
+    parser.add_argument("--task_name", type=str, default="iwildcam-2019-fgvc6", help="Specific task name to analyze (optional)")
+    parser.add_argument("--log_dir", type=str, default=DEFAULT_CONFIG["log_dir"], help="Directory for log files")
+    parser.add_argument("--max_depth", type=int, default=2, help="Max recursion depth for RLM")
+    parser.add_argument("--max_iterations", type=int, default=10, help="Max iterations for RLM")
     parser.add_argument("--verbose", action="store_true", default=True, help="Enable verbose output")
     return parser.parse_args()
 
@@ -82,6 +85,89 @@ def validate_path(path: str, description: str) -> Path:
 def get_data_path(account: str, run_id: int) -> str:
     """Get the data path for a given run ID."""
     return f"/checkpoint/{account}/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
+
+
+def save_summarization_from_log(log_path: str) -> str | None:
+    """Extract final_answer from RLM log and save as .md file.
+    
+    Args:
+        log_path: Path to the JSONL log file from Round 1
+        
+    Returns:
+        The final_answer string (markdown or JSON), or None if not found
+    """
+    log_path = log_path.strip()  # Remove any leading/trailing whitespace
+    log_path_obj = Path(log_path)
+    if not log_path_obj.exists():
+        print(f"Log file not found: {log_path}")
+        return None
+    
+    with open(log_path) as f:
+        for line in f:
+            entry = json.loads(line)
+            # Find the iteration with a final_answer
+            if entry.get("type") == "iteration" and entry.get("final_answer"):
+                final_answer = entry["final_answer"]
+                # Check for error messages that indicate REPL execution failed
+                if final_answer.startswith("Error:"):
+                    print(f"REPL execution failed: {final_answer}")
+                    return None
+                
+                # Save final_answer as .md file in the same directory
+                md_path = log_path_obj.with_suffix(".md")
+                with open(md_path, "w") as md_file:
+                    md_file.write(final_answer)
+                print(f"Saved final_answer to {md_path} ({len(final_answer)} chars)")
+                
+                return final_answer
+    
+    print("No final_answer found in log")
+    return None
+
+
+def save_summarization_from_result(result, output_path: str) -> str | None:
+    """Save RLM completion result as .md file.
+    
+    Args:
+        result: The RLMChatCompletion object or str from rlm.completion()
+        output_path: Path to save the .md file (will add .md suffix if needed)
+        
+    Returns:
+        The final answer string, or None if result was empty/error
+    """
+    if not result:
+        print("No result to save")
+        return None
+    
+    # Extract final answer - handle both RLMChatCompletion object and plain string
+    if isinstance(result, str):
+        final_answer = result
+    else:
+        # RLMChatCompletion object - final answer is in .response
+        final_answer = result.response
+    
+    if not final_answer:
+        print("No final answer in result")
+        return None
+    
+    # Check for error messages that indicate REPL execution failed
+    if final_answer.startswith("Error:"):
+        print(f"REPL execution failed: {final_answer}")
+        return None
+    
+    # Ensure .md extension
+    output_path_obj = Path(output_path)
+    if output_path_obj.suffix != ".md":
+        output_path_obj = output_path_obj.with_suffix(".md")
+    
+    # Create parent directory if needed
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path_obj, "w") as md_file:
+        md_file.write(final_answer)
+    print(f"Saved final answer to {output_path_obj} ({len(final_answer)} chars)")
+    
+    return final_answer
 
 
 # =============================================================================
@@ -279,7 +365,7 @@ def main() -> None:
     if args.task_name:
         log_file_name += f"_{args.task_name}"
     logger = RLMLogger(
-        log_dir=DEFAULT_CONFIG["log_dir"],
+        log_dir=args.log_dir,
         file_name=log_file_name
     )
 
@@ -287,24 +373,24 @@ def main() -> None:
     # Optionally filter by task_name if specified
     if args.task_name:
         setup_code = f"""
-import pandas as pd
+        import pandas as pd
 
-# Load rollout data as DataFrame
-rollout_df = pd.read_json('{data_path}', lines=True)
-print(f"Loaded {{len(rollout_df)}} total rollouts")
+        # Load rollout data as DataFrame
+        rollout_df = pd.read_json('{data_path}', lines=True)
+        print(f"Loaded {{len(rollout_df)}} total rollouts")
 
-# Filter to specific task
-rollout_df = rollout_df[rollout_df['task_name'] == '{args.task_name}']
-print(f"Filtered to {{len(rollout_df)}} rollouts for task: {args.task_name}")
-"""
+        # Filter to specific task
+        rollout_df = rollout_df[rollout_df['task_name'] == '{args.task_name}']
+        print(f"Filtered to {{len(rollout_df)}} rollouts for task: {args.task_name}")
+        """
     else:
         setup_code = f"""
-import pandas as pd
+        import pandas as pd
 
-# Load rollout data as DataFrame
-rollout_df = pd.read_json('{data_path}', lines=True)
-print(f"Loaded {{len(rollout_df)}} rollouts")
-"""
+        # Load rollout data as DataFrame
+        rollout_df = pd.read_json('{data_path}', lines=True)
+        print(f"Loaded {{len(rollout_df)}} rollouts")
+        """
 
     # Validate required environment variables
     required_env_vars = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"]
@@ -344,6 +430,9 @@ print(f"Loaded {{len(rollout_df)}} rollouts")
         root_prompt=root_prompt
     )
 
+    # Save result as .md file (use log path as base, but with .md extension)
+    output_path = Path(logger.log_file_path).with_suffix(".md")
+    save_summarization_from_result(result, str(output_path))
 
 
 if __name__ == "__main__":

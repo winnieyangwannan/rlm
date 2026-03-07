@@ -38,7 +38,7 @@ class RLMLogger:
         }
 
         with open(self.log_file_path, "a") as f:
-            json.dump(entry, f)
+            json.dump(entry, f, ensure_ascii=True)
             f.write("\n")
 
         self._metadata_logged = True
@@ -55,7 +55,7 @@ class RLMLogger:
         }
 
         with open(self.log_file_path, "a") as f:
-            json.dump(entry, f)
+            json.dump(entry, f, ensure_ascii=True)
             f.write("\n")
 
     @property

@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
     "run_id": 513,
     "model_name": "gpt-5",
     "job_name": "comparison",
-    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps",
+    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps/comparison/",
     "codebase_extensions": [".py", ".md", ".yaml"],
 }
 
@@ -146,7 +146,7 @@ Generic ML advice (e.g., "tune hyperparameters," "use cross-validation") without
 
 Before examining any solutions, reason about the task analysis:
 
-1. **What makes this task hard?** What are the core challenges a solver must overcome? (e.g., small N with high-dimensional features, heavy class imbalance, noisy labels, temporal dependencies, distribution shift between train/test)
+1. **What makes this task hard?** What are the core challenges a solver need to overcome? (e.g., small N with high-dimensional features, heavy class imbalance, noisy labels, temporal dependencies, distribution shift between train/test)
 
 2. **What are the likely failure traps?** Given the above, what are the most tempting-but-wrong approaches a solver might take?
 
@@ -330,7 +330,7 @@ AVAILABLE VARIABLES
     log_path = Path(logger_round2.log_file_path)
     result_md_path = log_path.with_suffix(".md")
     with open(result_md_path, "w") as f:
-        f.write(result_round2)
+        f.write(result_round2.response)
     print(f"\nResult saved to: {result_md_path}")
 
 

@@ -27,21 +27,21 @@ DEFAULT_CONFIG = {
     "run_id": 513,
     "model_name": "gpt-5",
     "job_name": "comparison",
-    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps",
+    "log_dir": "/checkpoint/maui_sft/winnieyangwn/rlm_dumps/comparison-v3/mle-30",
     "codebase_extensions": [".py", ".md", ".yaml"],
 }
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Compare MLE Bench solutions given Round 1 summarization log")
-    parser.add_argument("--round1-log", type=str, default="/checkpoint/maui_sft/winnieyangwn/rlm_dumps/archive/gpt5/summarization/gpt-5_summarization_513_2026-02-08_23-35-35_c4318c42.jsonl", help="Path to Round 1 summarization log file (required)")
-    parser.add_argument("--run-id", type=int, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
+    parser = argparse.ArgumentParser(description="Compare MLE Bench solutions given Round 1 summarization")
+    parser.add_argument("--summarization_dir", type=str, default="/checkpoint/maui_sft/winnieyangwn/rlm_dumps/summarization/mle-30", help="Directory containing Round 1 summarization .md files")
+    parser.add_argument("--run_id", type=int, default=DEFAULT_CONFIG["run_id"], help="Run ID to analyze")
     parser.add_argument("--model", type=str, default=DEFAULT_CONFIG["model_name"], help="Model name to use")
-    parser.add_argument("--job-name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
-    parser.add_argument("--task-name", type=str, default=None, help="Specific task name to analyze (optional)")
-    parser.add_argument("--max-depth", type=int, default=2, help="Max recursion depth for RLM")
-    parser.add_argument("--max-iterations", type=int, default=20, help="Max iterations for RLM")
+    parser.add_argument("--job_name", type=str, default=DEFAULT_CONFIG["job_name"], help="Job name for logging")
+    parser.add_argument("--task_name", type=str, required=True, help="Task name to analyze (required)")
+    parser.add_argument("--max_depth", type=int, default=2, help="Max recursion depth for RLM")
+    parser.add_argument("--max_iterations", type=int, default=20, help="Max iterations for RLM")
     parser.add_argument("--verbose", action="store_true", default=True, help="Enable verbose output")
     return parser.parse_args()
 
@@ -59,35 +59,74 @@ def get_data_path(run_id: int) -> str:
     return f"/checkpoint/maui_sft/winnieyangwn/amaia_dumps/{run_id}/trajectories/{run_id}_metadata.jsonl"
 
 
-def load_analysis_from_log(log_path: str) -> str | None:
-    """Extract final_answer from RLM log.
+def load_summarization_md(summarization_dir: str, task_name: str) -> str | None:
+    """Load Round 1 summarization .md file for a given task.
     
     Args:
-        log_path: Path to the JSONL log file from Round 1
+        summarization_dir: Directory containing summarization .md files
+        task_name: Task name to find the .md file for
         
     Returns:
-        The final_answer string (markdown or JSON), or None if not found
+        Content of the .md file, or None if not found
     """
-    log_path = log_path.strip()  # Remove any leading/trailing whitespace
-    if not Path(log_path).exists():
-        print(f"Log file not found: {log_path}")
+    summarization_path = Path(summarization_dir)
+    if not summarization_path.exists():
+        print(f"Summarization directory not found: {summarization_dir}")
         return None
     
-    with open(log_path) as f:
-        for line in f:
-            entry = json.loads(line)
-            # Find the iteration with a final_answer
-            if entry.get("type") == "iteration" and entry.get("final_answer"):
-                final_answer = entry["final_answer"]
-                # Check for error messages that indicate REPL execution failed
-                if final_answer.startswith("Error:"):
-                    print(f"REPL execution failed: {final_answer}")
-                    return None
-                print(f"Loaded final_answer from log ({len(final_answer)} chars)")
-                return final_answer
+    # Find .md files matching the task_name pattern
+    pattern = f"*_{task_name}_*.md"
+    md_files = list(summarization_path.glob(pattern))
     
-    print("No final_answer found in log")
-    return None
+    if not md_files:
+        print(f"No .md file found for task: {task_name}")
+        print(f"Searched in: {summarization_dir}")
+        print(f"Pattern: {pattern}")
+        return None
+    
+    if len(md_files) > 1:
+        print(f"Warning: Found {len(md_files)} .md files for task {task_name}, using most recent")
+        md_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    md_file = md_files[0]
+    print(f"Loading summarization from: {md_file}")
+    
+    with open(md_file) as f:
+        content = f.read()
+    
+    print(f"Loaded {len(content)} chars from {md_file.name}")
+    return content
+
+
+# def load_analysis_from_log(log_path: str) -> str | None:
+#     """Extract final_answer from RLM log.
+    
+#     Args:
+#         log_path: Path to the JSONL log file from Round 1
+        
+#     Returns:
+#         The final_answer string (markdown or JSON), or None if not found
+#     """
+#     log_path = log_path.strip()  # Remove any leading/trailing whitespace
+#     if not Path(log_path).exists():
+#         print(f"Log file not found: {log_path}")
+#         return None
+    
+#     with open(log_path) as f:
+#         for line in f:
+#             entry = json.loads(line)
+#             # Find the iteration with a final_answer
+#             if entry.get("type") == "iteration" and entry.get("final_answer"):
+#                 final_answer = entry["final_answer"]
+#                 # Check for error messages that indicate REPL execution failed
+#                 if final_answer.startswith("Error:"):
+#                     print(f"REPL execution failed: {final_answer}")
+#                     return None
+#                 print(f"Loaded final_answer from log ({len(final_answer)} chars)")
+#                 return final_answer
+    
+#     print("No final_answer found in log")
+#     return None
 
 
 def prepare_round2_context(round1_analysis: str, output_file: str) -> str:
@@ -111,8 +150,7 @@ def build_round2_question() -> str:
     return """## Goal
 Analyze previous solutions and analysis to identify:
 1. **Patterns that distinguish high vs low performance** (optimization)
-2. **Critical failures that cause suboptimal results** (failure prevention)
-3. **Unique high-performing approaches** (diversity preservation)
+2. **Unique high-performing approaches** (diversity preservation)
 
 ---
 
@@ -183,11 +221,6 @@ def main() -> None:
     # Build paths
     data_path = get_data_path(args.run_id)
     validate_path(data_path, "Data file")
-    
-    # Validate Round 1 log exists
-    round1_log_path = args.round1_log
-    if not Path(round1_log_path).exists():
-        raise FileNotFoundError(f"Round 1 log not found: {round1_log_path}")
 
     # Validate required environment variables
     required_env_vars = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"]
@@ -196,17 +229,16 @@ def main() -> None:
         raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     # =========================================================================
-    # PARSE ROUND 1 LOG → extract final_answer
+    # LOAD ROUND 1 SUMMARIZATION .md FILE
     # =========================================================================
     print("\n" + "=" * 80)
-    print(f"Loading analysis from Round 1 log: {round1_log_path}")
+    print(f"Loading Round 1 summarization for task: {args.task_name}")
     print("=" * 80)
     
-    round1_analysis = load_analysis_from_log(round1_log_path)
+    round1_analysis = load_summarization_md(args.summarization_dir, args.task_name)
 
     if round1_analysis is None:
-        print("ERROR: Could not extract analysis from Round 1 log. Exiting.")
-        print(f"Log path: {round1_log_path}")
+        print("ERROR: Could not load Round 1 summarization. Exiting.")
         return
 
     # =========================================================================
@@ -234,9 +266,10 @@ with open('{analysis_file}') as f:
 print(f"Loaded Round 1 analysis ({{len(round1_analysis)}} chars)")
 """
 
+    task_suffix = f"_{args.task_name}" if args.task_name else ""
     logger_round2 = RLMLogger(
         log_dir=DEFAULT_CONFIG["log_dir"],
-        file_name=f"{args.model}_{args.job_name}_{args.run_id}"
+        file_name=f"{args.model}_{args.job_name}_{args.run_id}{task_suffix}"
     )
 
     rlm_round2 = RLM(
@@ -283,7 +316,7 @@ AVAILABLE VARIABLES
     log_path = Path(logger_round2.log_file_path)
     result_md_path = log_path.with_suffix(".md")
     with open(result_md_path, "w") as f:
-        f.write(result_round2)
+        f.write(result_round2.response)
     print(f"\nResult saved to: {result_md_path}")
 
 
